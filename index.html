@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ranked Group Matcher (Live & Weighted)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- Export Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body{font-family:Arial;background:#f3f4f6;padding:20px;}
+.container{max-width:1000px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 5px 20px rgba(0,0,0,.1);}
+.section{margin-top:30px;}
+.checkbox-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;}
+.option-row{display:flex;align-items:center;gap:8px;}
+.box{background:#eef2ff;padding:15px;margin:12px 0;border-radius:8px;}
+.button{margin-top:15px;padding:8px 16px;border:none;border-radius:6px;background:#2563eb;color:white;cursor:pointer;}
+.admin{margin-top:30px;padding:15px;background:#fee2e2;border-radius:8px;}
+#submissionStatus span{display:inline-block;padding:6px 12px;margin:4px;background:#dbeafe;border-radius:20px;font-size:14px;}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Ranked Preference Matcher (Live & Weighted)</h1>
+
+<label><strong>Avatar Name:</strong></label><br>
+<input type="text" id="avatarName" style="width:100%;padding:8px;"><br>
+<div id="questions"></div>
+<button id="submitBtn" class="button">Submit</button>
+
+<hr>
+<h2>Submitted Avatars</h2>
+<div id="submissionStatus"></div>
+
+<hr>
+<h2>All Participants</h2>
+<div id="allUsers"></div>
+
+<button class="button" id="exportPNGBtn">Export as PNG</button>
+<button class="button" id="exportPDFBtn">Export as PDF</button>
+
+<hr>
+<h2>Generated Groups</h2>
+<div id="groupOutput"></div>
+
+<div class="admin">
+<h3>Admin Controls</h3>
+<input type="password" id="adminPass" placeholder="Enter admin password">
+<button class="button" id="adminResetBtn">Reset All Data</button>
+</div>
+</div>
+
+<script type="module">
+// Firebase imports
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// Firestore config (Firestore-only, remove databaseURL)
+const firebaseConfig = {
+
+  apiKey: "AIzaSyAXcn5Rhbns_8fxGhlGALN6f6FhXgvKDSM",
+
+  authDomain: "art104-module03-groupmatcher.firebaseapp.com",
+
+  projectId: "art104-module03-groupmatcher",
+
+  storageBucket: "art104-module03-groupmatcher.firebasestorage.app",
+
+  messagingSenderId: "677114305528",
+
+  appId: "1:677114305528:web:9f11eaf93f7e24c503d40d",
+
+  measurementId: "G-V1KNBY092F"
+
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const ADMIN_PASSWORD = "admin123";
+
+// Questions array
+const questions = [
+  { 
+    title:"For Module 03: Information & Communication, which technologies are you most interested in? Select 3 and rank them.", 
+    options:[
+      "Social Media Technologies -- tiktok, facebook, instagram, etc.",
+      "Network Technologies -- Internet",
+      "Commuinication technologies -- telephone, iphone, radio, email, text, videoconferencing",
+"Information technologies -- computers, print, internet, databases, etc.",
+      "AI",
+      "Machine Learning",
+      "Deepfakes",
+      "Print Media-- printing press, newspapers, zines",
+      "photography",
+      "film & video & television",
+      "email",
+      "texting",
+      "audio technologies",
+      "Other"
+    ], 
+    weight:25 
+  },
+  { 
+    title:"For Module 03: Information & Communication, which themes/topics are you most interested in? Select 3 and rank them.", 
+    options:[
+      "Surveillance Capitalism",
+      "Big Data",
+      "Data Visualisation",
+      "Data Bias",
+      "Information Systems",
+      "Information Literacy",
+      "Attention Economy",
+      "Privacy & Surveillance",
+      "AI Ethics",
+      "AI Bias",
+      "Social Media Information",
+      "Misinformation & Fake News & AI Misinformation",
+      "Algorithmic Bias",
+"Communication in the Digital Age",
+"Digital Inequity & Digital Divide",
+"The Alignment Problem",
+"Internet of Things",
+"Marketing & Advertising",
+"Propoganda",
+      "Other"
+    ], 
+    weight:25 
+  },
+  { 
+    title:"What are your favorite creative mediums to work in yourself? Select 3 and rank them.", 
+    options:[
+      "Video games",
+      "Coding",
+      "Digital Illustration",
+      "Analog Illustration",
+      "3D rendering",
+      "Animation",
+      "Video",
+      "Sound",
+      "Net-based Artwork",
+      "Graphic Design",
+      "Industrial Design",
+      "Film",
+      "Drawing",
+      "Painting",
+      "Sculpture",
+      "Sensors and physical computing",
+      "Other"
+    ], 
+    weight:25 
+  },
+  { 
+    title:"Which activities would you prefer to do in a group? Select 3 and rank them.", 
+    options:[
+      "Digital drawing",
+      "3D rendering",
+      "Writing",
+      "Research",
+      "Presentations",
+      "Graphic Design Creation with text and image",
+      "Summary of articles",
+      "Brainstorming",
+      "Leadership & Organizing & Communication",
+      "Combining Ideas",
+      "Coding",
+      "Hand-drawn Sketches",
+      "Other"
+    ], 
+    weight:25 
+  }
+];
+
+// Build UI
+function buildUI(){
+  const container = document.getElementById("questions");
+  questions.forEach((q,index)=>{
+    const div = document.createElement("div");
+    div.className="section";
+    div.innerHTML=`<h3>${q.title}</h3>`;
+    const grid = document.createElement("div");
+    grid.className="checkbox-grid";
+    q.options.forEach(opt=>{
+      const isOther = opt === "Other";
+      grid.innerHTML+=`
+<label class="option-row">
+<input type="checkbox" name="q${index}" value="${opt}" data-question="${index}" data-option="${opt}">
+${opt}
+${isOther ? `<input type="text" name="otherText${index}" placeholder="Please specify..." style="margin-left:8px;padding:4px;display:none;">` : ''}
+<select disabled name="rank${index}">
+<option value="">Rank</option>
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="3">3</option>
+</select>
+</label>`;
+    });
+    div.appendChild(grid);
+    container.appendChild(div);
+    setupRanking(index);
+  });
+}
+
+// Ranking logic
+function setupRanking(index){
+  const checks = document.querySelectorAll(`input[name="q${index}"]`);
+  checks.forEach(cb=>{
+    const select=cb.parentElement.querySelector("select");
+    const otherInput=cb.parentElement.querySelector(`input[name="otherText${index}"]`);
+    
+    cb.addEventListener("change", ()=>{
+      select.disabled=!cb.checked;
+      if(!cb.checked) select.value="";
+      
+      // Show/hide "Other" text input
+      if(otherInput){
+        otherInput.style.display = cb.checked ? 'inline-block' : 'none';
+        if(!cb.checked) otherInput.value = '';
+      }
+      
+      enforceUnique(index);
+    });
+    select.addEventListener("change", ()=>enforceUnique(index));
+  });
+}
+
+function enforceUnique(index){
+  const selects = document.querySelectorAll(`select[name="rank${index}"]`);
+  let used = [];
+  selects.forEach(s=>{
+    if(s.value){
+      if(used.includes(s.value)){
+        alert("Rank already used.");
+        s.value="";
+      } else used.push(s.value);
+    }
+  });
+}
+
+// Submit Answers
+async function submitAnswers(){
+  const name = document.getElementById("avatarName").value.trim();
+  if(!name){ alert("Enter avatar name"); return; }
+
+  let allAnswers=[];
+  let valid=true;
+  questions.forEach((q,index)=>{
+    let ranked=[];
+    document.querySelectorAll(`input[name="q${index}"]`).forEach(cb=>{
+      const sel = cb.parentElement.querySelector("select");
+      if(cb.checked && sel.value){
+        let optionValue = cb.value;
+        
+        // If "Other" is selected, get the custom text
+        if(optionValue === "Other"){
+          const otherInput = cb.parentElement.querySelector(`input[name="otherText${index}"]`);
+          if(otherInput && otherInput.value.trim()){
+            optionValue = "Other: " + otherInput.value.trim();
+          } else {
+            alert("Please specify what you mean by 'Other' in question " + (index + 1));
+            valid = false;
+            return;
+          }
+        }
+        
+        ranked.push({option:optionValue,rank:parseInt(sel.value)});
+      }
+    });
+    if(ranked.length!==3) valid=false;
+    ranked.sort((a,b)=>a.rank-b.rank);
+    
+    // Store as flat structure with question index
+    ranked.forEach(item => {
+      allAnswers.push({
+        questionIndex: index,
+        option: item.option,
+        rank: item.rank
+      });
+    });
+  });
+
+  if(!valid){ alert("Each question needs 3 ranked choices."); return; }
+
+  try{
+    await addDoc(collection(db,"users"), { 
+      name: name, 
+      answers: allAnswers
+    });
+    alert("Submission successful!");
+    document.getElementById("avatarName").value="";
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=false);
+    document.querySelectorAll('input[type="text"]').forEach(input=>{
+      input.value="";
+      input.style.display="none";
+    });
+    document.querySelectorAll('select').forEach(sel=>{
+      sel.value="";
+      sel.disabled=true;
+    });
+  } catch(err){ console.error(err); alert("Error submitting: " + err.message); }
+}
+
+// Live Snapshot
+const usersCollection = collection(db,"users");
+onSnapshot(usersCollection, snapshot=>{
+  let users=[];
+  snapshot.forEach(doc=>users.push({id:doc.id,...doc.data()}));
+  displaySubmissionStatus(users);
+  displayUsers(users);
+  displayGroups(users);
+});
+
+// Display Submission Status
+function displaySubmissionStatus(users){
+  const div = document.getElementById("submissionStatus");
+  div.innerHTML="";
+  const maxUsers = 24;
+  div.innerHTML += `<div style="margin-bottom:10px;font-weight:bold;">${users.length} / ${maxUsers} submitted</div>`;
+  users.forEach(u=> div.innerHTML+=`<span>${u.name}</span>`);
+  if(users.length>=maxUsers) div.innerHTML+=`<div style="margin-top:10px;color:green;font-weight:bold;">All submissions complete.</div>`;
+}
+
+// Display all users
+function displayUsers(users){
+  const div=document.getElementById("allUsers");
+  div.innerHTML="";
+  users.forEach(u=>{
+    // Reconstruct nested structure from flat answers
+    const answersByQuestion = [];
+    for(let i=0; i<questions.length; i++){
+      answersByQuestion[i] = u.answers.filter(a => a.questionIndex === i);
+    }
+    div.innerHTML+=`<div class="box"><strong>${u.name}</strong><br>${answersByQuestion.map((a,i)=>`Q${i+1}: ${a.map(x=>"#"+x.rank+" "+x.option).join(", ")}`).join("<br>")}</div>`;
+  });
+}
+
+// Display Groups
+function displayGroups(users){
+  const div=document.getElementById("groupOutput");
+  div.innerHTML="";
+  if(users.length<3){ div.innerHTML="Not enough users."; return; }
+  const groupSize=3;
+  for(let i=0;i<users.length;i+=groupSize){
+    let group = users.slice(i,i+groupSize);
+    let html="";
+    for(let q=0;q<questions.length;q++){
+      let counts={};
+      group.forEach(u=>{ 
+        const qAnswers = u.answers.filter(a => a.questionIndex === q);
+        qAnswers.forEach(a=>{ counts[a.option]=(counts[a.option]||0)+1; }); 
+      });
+      let result;
+      if(q<3){ result = Object.entries(counts).filter(([k,v])=>v>1).map(([k])=>k); html+=`Common Q${q+1}: ${result.length?result.join(", "):"None"}<br>`; }
+      else { result = Object.entries(counts).filter(([k,v])=>v===1).map(([k])=>k); html+=`Unique Q${q+1}: ${result.length?result.join(", "):"All same"}<br>`; }
+    }
+    div.innerHTML+=`<div class="box"><strong>Group ${Math.floor(i/groupSize)+1}</strong><br>Members: ${group.map(u=>u.name).join(", ")}<br><br>${html}</div>`;
+  }
+}
+
+// Export PNG
+function exportPNG(){
+  html2canvas(document.body).then(canvas=>{
+    const link=document.createElement("a");
+    link.download="results.png";
+    link.href=canvas.toDataURL();
+    link.click();
+  });
+}
+
+// Export PDF
+async function exportPDF(){
+  const { jsPDF }=window.jspdf;
+  const pdf=new jsPDF();
+  const canvas=await html2canvas(document.body);
+  pdf.addImage(canvas.toDataURL(),"PNG",0,0,210,297);
+  pdf.save("results.pdf");
+}
+
+// Admin Reset
+async function adminReset(){
+  const pass=document.getElementById("adminPass").value;
+  if(pass!==ADMIN_PASSWORD){ alert("Incorrect password."); return; }
+  const snapshot = await getDocs(collection(db,"users"));
+  for(const d of snapshot.docs) await deleteDoc(doc(db,"users",d.id));
+  alert("All data reset.");
+}
+
+// Attach event listeners
+document.getElementById("submitBtn").addEventListener("click", submitAnswers);
+document.getElementById("exportPNGBtn").addEventListener("click", exportPNG);
+document.getElementById("exportPDFBtn").addEventListener("click", exportPDF);
+document.getElementById("adminResetBtn").addEventListener("click", adminReset);
+
+buildUI();
+</script>
+</body>
+</html>
